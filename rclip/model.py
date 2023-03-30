@@ -1,39 +1,63 @@
-from typing import Callable, List, Tuple, Optional, cast
+from typing import List, Tuple, Optional, cast, Type
 
-import clip
-import clip.model
 import numpy as np
 from PIL import Image
 from rclip import utils
 import torch
 import torch.nn
+from transformers import CLIPModel, CLIPProcessor
+# import intel_extension_for_pytorch as ipex
 
 
 class Model:
   VECTOR_SIZE = 512
   _device = 'cpu'
-  _model_name = 'ViT-B/32'
+  # declip - not out
+  # fiber - not out
+  # openclip laion
+  # flava - ok trrying
+  # _model_name = 'hakurei/waifu-diffusion'
 
   def __init__(self):
-    model, preprocess = cast(
-      Tuple[clip.model.CLIP, Callable[[Image.Image], torch.Tensor]],
-      clip.load(self._model_name, device=self._device)
-    )
+    model = cast(CLIPModel, CLIPModel.from_pretrained(self._model_name)).to(self._device)
+    preprocess = CLIPProcessor.from_pretrained(self._model_name)
+    # images = []
+    # for _ in range(1):
+    #   images.append(Image.new("RGB", (224, 224), "#FFFFFF"))
+    #   images.append(Image.new("RGB", (224, 224)))
+    #   images.append(Image.new("RGB", (1000, 1000), "#FF0000"))
+    # images_processed = preprocess(images=images, return_tensors="pt")
+
+    # ipex.enable_onednn_fusion(True)
+    # with torch.no_grad():
+    #   # model.image_model = ipex.optimize(model.image_model, conv_bn_folding=True, replace_dropout_with_identity=True, auto_kernel_selection=True)
+    #   model.vision_model = torch.jit.trace(model.vision_model, images_processed.to(self._device)['pixel_values'], strict=False, check_trace=True)
+    #   model.vision_model = torch.jit.freeze(model.vision_model)
+
     self._model = model
     self._preprocess = preprocess
 
+  # def get_image_features(self, images):
+  #   image_outputs = self._model.vision_model(
+  #       pixel_values=images['pixel_values'],
+  #   )
+
+  #   pooled_output = image_outputs[1]  # last_hidden_state
+  #   image_features = self._model.visual_projection(pooled_output)
+  #   return image_features
+
   def compute_image_features(self, images: List[Image.Image]) -> np.ndarray:
-    images_preprocessed = torch.stack([self._preprocess(thumb) for thumb in images]).to(self._device)
+    images_preprocessed = self._preprocess(images=images, return_tensors="pt")
 
     with torch.no_grad():
-      image_features = self._model.encode_image(images_preprocessed)
+      image_features = self._model.get_image_features(**images_preprocessed)
       image_features /= image_features.norm(dim=-1, keepdim=True)
 
     return image_features.cpu().numpy()
 
   def compute_text_features(self, text: List[str]) -> np.ndarray:
     with torch.no_grad():
-      text_encoded = self._model.encode_text(clip.tokenize(text).to(self._device))
+      text_encoded = self._model.get_text_features(**self._preprocess(text, return_tensors="pt"))
       text_encoded /= text_encoded.norm(dim=-1, keepdim=True)
 
     return text_encoded.cpu().numpy()
@@ -84,3 +108,16 @@ class Model:
     sorted_similarities = sorted(zip(similarities, range(item_features.shape[0])), key=lambda x: x[0], reverse=True)
 
     return sorted_similarities
+
+class CLIP(Model):
+  _model_name = 'openai/clip-vit-base-patch32'
+
+class OpenCLIP(Model):
+  _model_name = 'laion/CLIP-ViT-B-32-laion2B-s34B-b79K'
+
+model_dict = {
+  'clip': CLIP,
+  'openclip': OpenCLIP,
+}
+
+default_model = 'openclip'

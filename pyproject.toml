@@ -18,18 +18,18 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.10"
+# python = ">=3.8,<3.10"
 clip = { git = "https://github.com/openai/CLIP.git", rev = "3702849800aa56e2223035bccd1c6ef91c704ca8" }
 pillow = ">=9.0.1"
 requests = "~=2.26"
-torch = [
-  { version = "==1.9.0", source = "pypi", markers = "sys_platform != 'linux'" },
-  { version = "==1.9.0+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux'" }
-]
-torchvision = [
-  { version = "==0.10.0", source = "pypi", markers = "sys_platform != 'linux'" },
-  { version = "==0.10.0+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux'" }
-]
+# torch = [
+#   { version = "==1.9.0", source = "pypi", markers = "sys_platform != 'linux'" },
+#   { version = "==1.9.0+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux'" }
+# ]
+# torchvision = [
+#   { version = "==0.10.0", source = "pypi", markers = "sys_platform != 'linux'" },
+#   { version = "==0.10.0+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux'" }
+# ]
 
 [tool.poetry.group.dev.dependencies]
 pycodestyle = ">=2.7,<3.0"
@@ -46,3 +46,7 @@ build-backend = "poetry.core.masonry.api"
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 secondary = true
+
+[tool.pyright]
+include = ["rclip"]
+exclude = ["venv"]

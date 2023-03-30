@@ -52,8 +52,9 @@ def top_arg_type(arg: str) -> int:
 
 
 def init_arg_parser() -> argparse.ArgumentParser:
+  from rclip.model import model_dict, default_model
   parser = argparse.ArgumentParser()
-  parser.add_argument('query')
+  parser.add_argument('query', nargs='?', default=None)
   parser.add_argument('--add', '-a', action='append', default=[], help='queries to add to the "original" query')
   parser.add_argument('--subtract', '--sub', '-s', action='append', default=[],
                       help='queries to subtract from the "original" query')
@@ -72,6 +73,17 @@ def init_arg_parser() -> argparse.ArgumentParser:
     ' adding this argument overrides the default of ("@eaDir", "node_modules", ".git");'
     ' WARNING: the default will be removed in v2'
   )
+  parser.add_argument(
+    '--model',
+    action='store',
+    choices=list(model_dict),
+    default=default_model,
+    help='''which model to use
+    warning that this uses a different sqlite db as vectors are incompatible between models
+    '''
+  )
+  parser.add_argument('--sigtstp', action='store_true', default=False, help='pause after init for criu')
+  parser.add_argument('--pwd', default=False, help=argparse.SUPPRESS)
   return parser
 
 

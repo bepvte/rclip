@@ -3,6 +3,9 @@ import os
 from os import path
 import re
 from typing import Iterable, List, NamedTuple, Optional, Tuple, TypedDict, cast
+import signal
+import shlex
+from sys import stdin
 
 import numpy as np
 from tqdm import tqdm
@@ -57,6 +60,7 @@ class RClip:
     for path in filepaths:
       try:
         image = Image.open(path)
+        # image.convert("RGB")
         images.append(image)
         filtered_paths.append(path)
       except PIL.UnidentifiedImageError as ex:
@@ -68,6 +72,7 @@ class RClip:
       features = self._model.compute_image_features(images)
     except Exception as ex:
       print('error computing features:', ex)
+      print('For image ', path)
       return
     for path, meta, vector in cast(Iterable[Tuple[str, ImageMeta, np.ndarray]], zip(filtered_paths, metas, features)):
       self._db.upsert_image(db.NewImage(
@@ -152,11 +157,21 @@ def main():
   arg_parser = utils.init_arg_parser()
   args = arg_parser.parse_args()
 
+  orig_modelname = args.model
+  model_instance = model.model_dict[orig_modelname]()
+  if args.sigtstp:
+    signal.raise_signal(signal.SIGSTOP)
+    spl = shlex.split(stdin.readline())
+    args = arg_parser.parse_args(args=spl)
+  if not args.query:
+    raise ValueError("no query")
+  if args.pwd:
+    os.chdir(args.pwd)
   current_directory = os.getcwd()
-
-  model_instance = model.Model()
   datadir = utils.get_app_datadir()
-  database = db.DB(datadir / 'db.sqlite3')
+  # TODO: model name db better
+  dbname = 'db.sqlite3' if orig_modelname == 'clip' else f'{orig_modelname}.sqlite3'
+  database = db.DB(datadir / dbname)
   rclip = RClip(model_instance, database, args.exclude_dir)
 
   if not args.skip_index:
