@@ -143,3 +143,8 @@ appimage-builder-cache
 *.AppImage.zsync
 requirements.txt
 checkpoint/
+
+# snapcraft
+*.snap
+/snap/local/
+/rclip_*.txt

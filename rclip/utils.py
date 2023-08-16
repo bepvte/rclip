@@ -1,10 +1,11 @@
 import argparse
 import os
 import pathlib
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import re
 import requests
 import sys
+from importlib.metadata import version
 
 
 MAX_DOWNLOAD_SIZE_BYTES = 50_000_000
@@ -52,16 +53,30 @@ def top_arg_type(arg: str) -> int:
 
 
 def init_arg_parser() -> argparse.ArgumentParser:
-  from rclip.model import model_dict, default_model
-  parser = argparse.ArgumentParser()
-  parser.add_argument('query', nargs='?', default=None)
-  parser.add_argument('--add', '-a', action='append', default=[], help='queries to add to the "original" query')
-  parser.add_argument('--subtract', '--sub', '-s', action='append', default=[],
-                      help='queries to subtract from the "original" query')
+  parser = argparse.ArgumentParser(
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    prefix_chars='-+',
+    epilog='hints:\n'
+    '  relative file path should be prefixed with ./, e.g. "./cat.jpg", not "cat.jpg"\n'
+    '  any query can be prefixed with a multiplier, e.g. "2:cat", "0.5:./cat-sleeps-on-a-chair.jpg";'
+    ' adding a multiplier is especially useful when combining image and text queries because'
+    ' image queries are usually weighted more than text ones\n\n'
+    'report a problem or suggest an improvement:\n'
+    '  https://github.com/yurijmikhalevich/rclip/issues\n\n',
+  )
+  version_str = f'rclip {version("rclip")}'
+  parser.add_argument('--version', '-v', action='version', version=version_str, help=f'prints "{version_str}"')
+  parser.add_argument('query', help='a text query or a path/URL to an image file')
+  parser.add_argument('--add', '-a', '+', metavar='QUERY', action='append', default=[],
+                      help='a text query or a path/URL to an image file to add to the "original" query,'
+                      ' can be used multiple times')
+  parser.add_argument('--subtract', '--sub', '-s', '-', metavar='QUERY', action='append', default=[],
+                      help='a text query or a path/URL to an image file to add to the "original" query,'
+                      ' can be used multiple times')
   parser.add_argument('--top', '-t', type=top_arg_type, default=10, help='number of top results to display')
   parser.add_argument('--filepath-only', '-f', action='store_true', default=False, help='outputs only filepaths')
   parser.add_argument(
-    '--skip-index', '-n',
+    '--no-indexing', '--skip-index', '-n',
     action='store_true',
     default=False,
     help='don\'t attempt image indexing, saves time on consecutive runs on huge directories'
@@ -69,7 +84,7 @@ def init_arg_parser() -> argparse.ArgumentParser:
   parser.add_argument(
     '--exclude-dir',
     action='append',
-    help='dir to exclude from search, can be specified multiple times;'
+    help='dir to exclude from search, can be used multiple times;'
     ' adding this argument overrides the default of ("@eaDir", "node_modules", ".git");'
     ' WARNING: the default will be removed in v2'
   )
@@ -108,7 +123,12 @@ def download_image(url: str) -> Image.Image:
 
 def read_image(query: str) -> Image.Image:
   path = remove_prefix(query, 'file://')
-  img = Image.open(path)
+  try:
+    img = Image.open(path)
+  except UnidentifiedImageError as e:
+    # by default the filename on the UnidentifiedImageError is None
+    e.filename = path
+    raise e
   return img
 
 

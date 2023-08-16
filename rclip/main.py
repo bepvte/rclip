@@ -13,6 +13,7 @@ import PIL
 from PIL import Image, ImageFile
 
 from rclip import db, model, utils
+from rclip.snap_utils import check_snap_permissions, is_snap
 
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -134,8 +135,16 @@ class RClip:
     positive_queries = [query] + positive_queries
     sorted_similarities = self._model.compute_similarities_to_text(features, positive_queries, negative_queries)
 
+    # exclude images that were part of the query from the results
+    exclude_files = [
+      os.path.abspath(query) for query in positive_queries + negative_queries if utils.is_file_path(query)
+    ]
+
     filtered_similarities = filter(
-      lambda similarity: not self._exclude_dir_regex.match(filepaths[similarity[1]]),
+      lambda similarity: (
+        not self._exclude_dir_regex.match(filepaths[similarity[1]]) and
+        not filepaths[similarity[1]] in exclude_files
+      ),
       sorted_similarities
     )
     top_k_similarities = itertools.islice(filtered_similarities, top_k)
@@ -168,13 +177,16 @@ def main():
   if args.pwd:
     os.chdir(args.pwd)
   current_directory = os.getcwd()
+  if is_snap():
+    check_snap_permissions(current_directory)
+
   datadir = utils.get_app_datadir()
   # TODO: model name db better
   dbname = 'db.sqlite3' if orig_modelname == 'clip' else f'{orig_modelname}.sqlite3'
   database = db.DB(datadir / dbname)
   rclip = RClip(model_instance, database, args.exclude_dir)
 
-  if not args.skip_index:
+  if not args.no_indexing:
     rclip.ensure_index(current_directory)
 
   result = rclip.search(args.query, current_directory, args.top, args.add, args.subtract)
