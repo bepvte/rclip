@@ -26,7 +26,7 @@ fi
 tempdir=$(mktemp rclip.XXXXX --tmpdir)
 set -x
 # rclip -t 300 $( [[ -z ${args[(I)-i]} ]] && echo - '-n' ) $@ | tail -n +2 | cut -f2- | tr -d \" | xargs -d'\n' -n1 wslpath -w >> $tempdir
-pipe0=40219 pipe1=40221 stderrid="tty[8801:32]" argv=(\"$^argv\")
+pipe0=24767 pipe1=24769 stderrid="tty[8801:32]" argv=(\"$^argv\")
 truncate --size 0 /tmp/rclipstderr
 tail -f /tmp/rclipstderr &
 echo - "-t 500 $( [[ -z ${args[(I)-i]} ]] && echo - '-n' ) --pwd ${PWD} $*" | sudo criu restore -v2 --display-stats --inherit-fd "fd[0]:pipe:[$pipe0]" --inherit-fd "fd[1]:pipe:[$pipe1]" --inherit-fd "fd[2]:$stderrid" -D /home/bep/rclip/checkpoint --action-script /home/bep/rclip/resume_script.sh | tail -n +2 | cut -f2- | tr -d \" | xargs -d'\n' -n1 wslpath -w >> $tempdir
