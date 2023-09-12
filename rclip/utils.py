@@ -53,6 +53,8 @@ def top_arg_type(arg: str) -> int:
 
 
 def init_arg_parser() -> argparse.ArgumentParser:
+  from .model import model_dict, default_model
+
   parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
     prefix_chars='-+',
@@ -66,7 +68,7 @@ def init_arg_parser() -> argparse.ArgumentParser:
   )
   version_str = f'rclip {version("rclip")}'
   parser.add_argument('--version', '-v', action='version', version=version_str, help=f'prints "{version_str}"')
-  parser.add_argument('query', help='a text query or a path/URL to an image file')
+  parser.add_argument('query', help='a text query or a path/URL to an image file', nargs='?')
   parser.add_argument('--add', '-a', '+', metavar='QUERY', action='append', default=[],
                       help='a text query or a path/URL to an image file to add to the "original" query,'
                       ' can be used multiple times')

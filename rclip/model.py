@@ -5,10 +5,6 @@ import sys
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 from rclip import utils
-import torch
-import torch.nn
-from transformers import CLIPModel, CLIPProcessor
-# import intel_extension_for_pytorch as ipex
 
 QUERY_WITH_MULTIPLIER_RE = re.compile(r'^(?P<multiplier>(\d+(\.\d+)?|\.\d+|\d+\.)):(?P<query>.+)$')
 QueryWithMultiplier = Tuple[float, str]
@@ -17,53 +13,56 @@ QueryWithMultiplier = Tuple[float, str]
 class Model:
   VECTOR_SIZE = 512
   _device = 'cpu'
-  # declip - not out
-  # fiber - not out
-  # openclip laion
-  # flava - ok trrying
-  # _model_name = 'hakurei/waifu-diffusion'
+  _model_name = 'ViT-B-32'
 
   def __init__(self):
-    model = cast(CLIPModel, CLIPModel.from_pretrained(self._model_name)).to(self._device)
-    preprocess = CLIPProcessor.from_pretrained(self._model_name)
-    # images = []
-    # for _ in range(1):
-    #   images.append(Image.new("RGB", (224, 224), "#FFFFFF"))
-    #   images.append(Image.new("RGB", (224, 224)))
-    #   images.append(Image.new("RGB", (1000, 1000), "#FF0000"))
-    # images_processed = preprocess(images=images, return_tensors="pt")
+    self.__model = None
+    self.__preprocess = None
+    self.__tokenizer = None
 
-    # ipex.enable_onednn_fusion(True)
-    # with torch.no_grad():
-    #   # model.image_model = ipex.optimize(model.image_model, conv_bn_folding=True, replace_dropout_with_identity=True, auto_kernel_selection=True)
-    #   model.vision_model = torch.jit.trace(model.vision_model, images_processed.to(self._device)['pixel_values'], strict=False, check_trace=True)
-    #   model.vision_model = torch.jit.freeze(model.vision_model)
+  @property
+  def _tokenizer(self):
+    import open_clip
+    if not self.__tokenizer:
+      self.__tokenizer = open_clip.get_tokenizer(self._model_name)
+    return self.__tokenizer
 
-    self._model = model
-    self._preprocess = preprocess
+  @property
+  def _model(self):
+    import open_clip
+    if not self.__model:
+      self.__model, _, self.__preprocess = open_clip.create_model_and_transforms(
+        self._model_name,
+        pretrained=self._checkpoint_name,
+        device=self._device,
+      )
+    return self.__model
 
-  # def get_image_features(self, images):
-  #   image_outputs = self._model.vision_model(
-  #       pixel_values=images['pixel_values'],
-  #   )
-
-  #   pooled_output = image_outputs[1]  # last_hidden_state
-  #   image_features = self._model.visual_projection(pooled_output)
-  #   return image_features
+  @property
+  def _preprocess(self):
+    import open_clip
+    if not self.__preprocess:
+      self.__model, _, self.__preprocess = open_clip.create_model_and_transforms(
+        self._model_name,
+        pretrained=self._checkpoint_name,
+        device=self._device,
+      )
+    return self.__preprocess
 
   def compute_image_features(self, images: List[Image.Image]) -> np.ndarray:
-    images_preprocessed = self._preprocess(images=images, return_tensors="pt")
-
+    import torch
+    images_preprocessed = torch.stack([self._preprocess(thumb) for thumb in images]).to(self._device)
     with torch.no_grad():
-      image_features = self._model.get_image_features(**images_preprocessed)
+      image_features = self._model.encode_image(images_preprocessed)
       image_features /= image_features.norm(dim=-1, keepdim=True)
     return image_features.cpu().numpy()
 
   def compute_text_features(self, text: List[str]) -> np.ndarray:
     import torch
     with torch.no_grad():
-      text_encoded = self._model.get_text_features(**self._preprocess(text, return_tensors="pt"))
-      text_encoded /= text_encoded.norm(dim=-1, keepdim=True)
+      text_features = self._model.encode_text(self._tokenizer(text).to(self._device))
+      text_features /= text_features.norm(dim=-1, keepdim=True)
+    return text_features.cpu().numpy()
 
   @staticmethod
   def _extract_query_multiplier(query: str) -> QueryWithMultiplier:
@@ -139,15 +138,15 @@ class Model:
 
     return sorted_similarities
 
-class CLIP(Model):
-  _model_name = 'openai/clip-vit-base-patch32'
-
 class OpenCLIP(Model):
-  _model_name = 'laion/CLIP-ViT-B-32-laion2B-s34B-b79K'
+  _checkpoint_name = "laion2b_s34b_b79k"
+
+class CLIP(Model):
+  _checkpoint_name = "openai"
 
 model_dict = {
-  'clip': CLIP,
   'openclip': OpenCLIP,
+  'clip': CLIP,
 }
 
 default_model = 'openclip'
