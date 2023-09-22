@@ -19,12 +19,14 @@
 sudo snap install rclip
 ```
 
-If your Linux distribution doesn't support [snap](https://snapcraft.io/rclip), you can use one of the alternative installation options:
-
 <details>
-  <summary>Prebuilt x86_64 binary</summary>
+  <summary>Alternative options (self-contained executable and <code>pip</code>)</summary>
 
-  On Linux x86_64, you can install **rclip** as a self-containing binary.
+  If your Linux distribution doesn't support [snap](https://snapcraft.io/rclip), you can use one of the alternative installation options:
+
+  #### Prebuilt x86_64 executable
+
+  On Linux x86_64, you can install **rclip** as a self-contained executable.
 
   1. Download the AppImage from the latest [release](https://github.com/yurijmikhalevich/rclip/releases).
 
@@ -34,10 +36,8 @@ If your Linux distribution doesn't support [snap](https://snapcraft.io/rclip), y
   chmod +x <downloaded AppImage filename>
   sudo mv <downloaded AppImage filename> /usr/local/bin/rclip
   ```
-</details>
 
-<details>
-  <summary>Using <code>pip</code></summary>
+  #### Using <code>pip</code>
 
   ```bash
   pip install --extra-index-url https://download.pytorch.org/whl/cpu rclip
@@ -50,10 +50,8 @@ If your Linux distribution doesn't support [snap](https://snapcraft.io/rclip), y
 brew install yurijmikhalevich/tap/rclip
 ```
 
-Alternative option:
-
 <details>
-  <summary>Using <code>pip</code></summary>
+  <summary>Alternative option (<code>pip</code>)</summary>
 
   ```bash
   pip install rclip
@@ -62,9 +60,16 @@ Alternative option:
 
 ### Windows
 
-```bash
-pip install rclip
-```
+1. Download the "-installer.exe" from the latest [release](https://github.com/yurijmikhalevich/rclip/releases).
+2. Install **rclip** by running the installer.
+
+<details>
+  <summary>Alternative option (<code>pip</code>)</summary>
+
+  ```bash
+  pip install rclip
+  ```
+</details>
 
 ## Usage
 
@@ -74,7 +79,7 @@ cd photos && rclip "search query"
 
 <img alt="rclip usage demo" src="https://raw.githubusercontent.com/yurijmikhalevich/rclip/main/resources/rclip-usage.gif" width="640px" />
 
-When you run **rclip** for the first time in a particular directory, it's going to extract features from the photos, and this takes time. How long it takes depends on your CPU and the number of pictures you will search through. It took about a day to process 73 thousand photos on my NAS, which runs an old-ish Intel Celeron J3455.
+When you run **rclip** for the first time in a particular directory, it will extract features from the photos, which takes time. How long it will take depends on your CPU and the number of pictures you will search through. It took about a day to process 73 thousand photos on my NAS, which runs an old-ish Intel Celeron J3455, 7 minutes to index 50 thousand images on my MacBook with an M1 Max CPU, and three hours to process 1.28 million images on the same MacBook.
 
 For a detailed demonstration, watch the video: https://www.youtube.com/watch?v=tAJHXOkHidw.
 
@@ -107,17 +112,29 @@ If you want to see how these queries perform when executed on the 1.28 million i
 
 ### How do I preview the results?
 
-The command from below will open top-5 results for "kitty" in your default image viewer:
+If you are using either one of [iTerm2](https://iterm2.com/), [Konsole](https://konsole.kde.org/) (version 22.04 and higher), [wezterm](https://wezfurlong.org/wezterm/), [Mintty](https://mintty.github.io/), or [mlterm](https://mlterm.sourceforge.net/) all you need to do is pass `--preview` (or `-p`) argument to **rclip**:
 
 ```bash
-rclip -f -t 5 kitty | xargs -d '\n' -n 1 xdg-open
+rclip -p kitty
 ```
 
-I prefer to use `feh`'s thumbnail mode to preview multiple results:
+<details>
+  <summary>Using a different terminal or viewer</summary>
 
-```bash
-rclip -f -t 5 kitty | feh -f - -t
-```
+  If you are using any other terminal or want to view the results in your viewer of choice, you can pass the output of **rclip** to it. For example, on Linux, the command from below will open top-5 results for "kitty" in your default image viewer:
+
+  ```bash
+  rclip -f -t 5 kitty | xargs -d '\n' -n 1 xdg-open
+  ```
+
+  The `-f` param or `--filepath-only` makes **rclip** print the file paths only, without scores or the header, which makes it ideal to use together with a custom viewer as in the example.
+  
+  I prefer to use **feh**'s thumbnail mode to preview multiple results:
+
+  ```bash
+  rclip -f -t 5 kitty | feh -f - -t
+  ```
+</details>
 
 ## Help
 

@@ -1,11 +1,14 @@
 import argparse
 import os
 import pathlib
+import textwrap
 from PIL import Image, UnidentifiedImageError
 import re
 import requests
 import sys
 from importlib.metadata import version
+
+from rclip.const import IS_LINUX, IS_MACOS, IS_WINDOWS
 
 
 MAX_DOWNLOAD_SIZE_BYTES = 50_000_000
@@ -25,11 +28,11 @@ def __get_system_datadir() -> pathlib.Path:
 
   home = pathlib.Path.home()
 
-  if sys.platform == 'win32':
+  if IS_WINDOWS:
     return home / 'AppData/Roaming'
-  elif sys.platform.startswith('linux'):
+  elif IS_LINUX:
     return home / '.local/share'
-  elif sys.platform == 'darwin':
+  elif IS_MACOS:
     return home / 'Library/Application Support'
 
   raise NotImplementedError(f'"{sys.platform}" is not supported')
@@ -45,43 +48,90 @@ def get_app_datadir() -> pathlib.Path:
   return app_datadir
 
 
-def top_arg_type(arg: str) -> int:
+def positive_int_arg_type(arg: str) -> int:
   arg_int = int(arg)
   if arg_int < 1:
-    raise argparse.ArgumentTypeError('number of results to display should be >0')
+    raise argparse.ArgumentTypeError('should be >0')
   return arg_int
 
 
-def init_arg_parser() -> argparse.ArgumentParser:
-  from .model import model_dict, default_model
+def get_terminal_text_width() -> int:
+  try:
+    return min(100, os.get_terminal_size().columns - 2)
+  except OSError:
+    return 100
 
+
+class HelpFormatter(argparse.RawDescriptionHelpFormatter):
+  def __init__(self, prog: str, indent_increment: int = 2, max_help_position: int = 24) -> None:
+    text_width = get_terminal_text_width()
+    super().__init__(prog, indent_increment, max_help_position, width=text_width)
+
+
+def init_arg_parser() -> argparse.ArgumentParser:
+  text_width = get_terminal_text_width()
   parser = argparse.ArgumentParser(
-    formatter_class=argparse.RawDescriptionHelpFormatter,
+    formatter_class=HelpFormatter,
     prefix_chars='-+',
-    epilog='hints:\n'
-    '  relative file path should be prefixed with ./, e.g. "./cat.jpg", not "cat.jpg"\n'
-    '  any query can be prefixed with a multiplier, e.g. "2:cat", "0.5:./cat-sleeps-on-a-chair.jpg";'
-    ' adding a multiplier is especially useful when combining image and text queries because'
-    ' image queries are usually weighted more than text ones\n\n'
-    'report a problem or suggest an improvement:\n'
-    '  https://github.com/yurijmikhalevich/rclip/issues\n\n',
+    description='rclip is an AI-powered command-line photo search tool',
+    epilog='hints:\n' +
+    textwrap.fill(
+      '- relative file path should be prefixed with ./, e.g. "./cat.jpg", not "cat.jpg"',
+      initial_indent='  ',
+      subsequent_indent='    ',
+      width=text_width,
+    ) +
+    '\n' +
+    textwrap.fill(
+      '- any query can be prefixed with a multiplier, e.g. "2:cat", "0.5:./cat-sleeps-on-a-chair.jpg";'
+      ' adding a multiplier is especially useful when combining image and text queries because'
+      ' image queries are usually weighted more than text ones',
+      initial_indent='  ',
+      subsequent_indent='    ',
+      width=text_width,
+    ) +
+    '\n\n'
+    'get help:\n'
+    '  https://github.com/yurijmikhalevich/rclip/discussions/new/choose\n\n',
   )
   version_str = f'rclip {version("rclip")}'
   parser.add_argument('--version', '-v', action='version', version=version_str, help=f'prints "{version_str}"')
-  parser.add_argument('query', help='a text query or a path/URL to an image file', nargs='?')
+  parser.add_argument('query', help='a text query or a path/URL to an image file')
   parser.add_argument('--add', '-a', '+', metavar='QUERY', action='append', default=[],
                       help='a text query or a path/URL to an image file to add to the "original" query,'
                       ' can be used multiple times')
   parser.add_argument('--subtract', '--sub', '-s', '-', metavar='QUERY', action='append', default=[],
                       help='a text query or a path/URL to an image file to add to the "original" query,'
                       ' can be used multiple times')
-  parser.add_argument('--top', '-t', type=top_arg_type, default=10, help='number of top results to display')
-  parser.add_argument('--filepath-only', '-f', action='store_true', default=False, help='outputs only filepaths')
-  parser.add_argument(
-    '--no-indexing', '--skip-index', '-n',
+  parser.add_argument('--top', '-t', type=positive_int_arg_type, default=10,
+                      help='number of top results to display; default: 10')
+  display_mode_group = parser.add_mutually_exclusive_group()
+  display_mode_group.add_argument(
+    '--preview', '-p',
     action='store_true',
     default=False,
-    help='don\'t attempt image indexing, saves time on consecutive runs on huge directories'
+    help='preview results in the terminal (supported in iTerm2, Konsole 22.04+, wezterm, Mintty, mlterm)',
+  )
+  display_mode_group.add_argument(
+    '--filepath-only', '-f', action='store_true', default=False, help='outputs only filepaths',
+  )
+  parser.add_argument(
+    '--preview-height', '-H', metavar='PREVIEW_HEIGHT_PX',
+    action='store',
+    type=int,
+    default=400,
+    help='preview height in pixels; default: 400',
+  )
+  parser.add_argument(
+    '--no-indexing', '--skip-index', '--skip-indexing', '-n',
+    action='store_true',
+    default=False,
+    help='allows to skip updating the index if no images were added, changed, or removed'
+  )
+  parser.add_argument(
+    '--indexing-batch-size', '-b', type=positive_int_arg_type, default=8,
+    help='the size of the image batch used when updating the search index;'
+    ' larger values may improve the indexing speed a bit on some hardware but will increase RAM usage; default: 8',
   )
   parser.add_argument(
     '--exclude-dir',
@@ -90,17 +140,11 @@ def init_arg_parser() -> argparse.ArgumentParser:
     ' adding this argument overrides the default of ("@eaDir", "node_modules", ".git");'
     ' WARNING: the default will be removed in v2'
   )
-  parser.add_argument(
-    '--model',
-    action='store',
-    choices=list(model_dict),
-    default=default_model,
-    help='''which model to use
-    warning that this uses a different sqlite db as vectors are incompatible between models
-    '''
-  )
-  parser.add_argument('--sigtstp', action='store_true', default=False, help='pause after init for criu')
-  parser.add_argument('--pwd', default=False, help=argparse.SUPPRESS)
+  if IS_MACOS:
+    import torch.backends.mps
+    if torch.backends.mps.is_available():
+      parser.add_argument('--device', '-d', default='mps', choices=['cpu', 'mps'],
+                          help='device to run on; default: mps')
   return parser
 
 

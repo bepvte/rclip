@@ -3,19 +3,21 @@ from typing import List, Tuple, Optional, cast
 import sys
 
 import numpy as np
+import numpy.typing as npt
 from PIL import Image, UnidentifiedImageError
-from rclip import utils
+from rclip.utils import helpers
 
 QUERY_WITH_MULTIPLIER_RE = re.compile(r'^(?P<multiplier>(\d+(\.\d+)?|\.\d+|\d+\.)):(?P<query>.+)$')
 QueryWithMultiplier = Tuple[float, str]
+FeatureVector = npt.NDArray[np.float32]
 
 
 class Model:
   VECTOR_SIZE = 512
-  _device = 'cpu'
   _model_name = 'ViT-B-32'
 
-  def __init__(self):
+  def __init__(self, device: str = 'cpu'):
+    self._device = device
     self.__model = None
     self.__preprocess = None
     self.__tokenizer = None
@@ -84,17 +86,17 @@ class Model:
     url_queries: List[Tuple[float, str]] = []
     for query in queries:
         multiplier, query = Model._extract_query_multiplier(query)
-        if utils.is_http_url(query):
+        if helpers.is_http_url(query):
           url_queries.append((multiplier, query))
-        elif utils.is_file_path(query):
+        elif helpers.is_file_path(query):
           local_file_queries.append((multiplier, query))
         else:
           phrase_queries.append((multiplier, query))
     return phrase_queries, local_file_queries, url_queries
 
-  def compute_features_for_queries(self, queries: List[str]) -> np.ndarray:
-    text_features: Optional[np.ndarray] = None
-    image_features: Optional[np.ndarray] = None
+  def compute_features_for_queries(self, queries: List[str]) -> FeatureVector:
+    text_features: Optional[FeatureVector] = None
+    image_features: Optional[FeatureVector] = None
     phrases, files, urls = self._group_queries_by_type(queries)
     if phrases:
       phrase_multipliers, phrase_queries = cast(Tuple[Tuple[float], Tuple[str]], zip(*phrases))
@@ -104,8 +106,8 @@ class Model:
       file_multipliers, file_paths = cast(Tuple[Tuple[float], Tuple[str]], zip(*(files))) if files else ((), ())
       url_multipliers, url_paths = cast(Tuple[Tuple[float], Tuple[str]], zip(*(urls))) if urls else ((), ())
       try:
-        images = ([utils.download_image(q) for q in url_paths] +
-                  [utils.read_image(q) for q in file_paths])
+        images = ([helpers.download_image(q) for q in url_paths] +
+                  [helpers.read_image(q) for q in file_paths])
       except FileNotFoundError as e:
         print(f'File "{e.filename}" not found. Check if you have typos in the filename.')
         sys.exit(1)
@@ -122,10 +124,10 @@ class Model:
     elif image_features is not None:
         return image_features
     else:
-        return np.zeros(Model.VECTOR_SIZE)
+        return np.zeros(Model.VECTOR_SIZE, dtype=np.float32)
 
   def compute_similarities_to_text(
-      self, item_features: np.ndarray,
+      self, item_features: FeatureVector,
       positive_queries: List[str], negative_queries: List[str]) -> List[Tuple[float, int]]:
 
     positive_features = self.compute_features_for_queries(positive_queries)

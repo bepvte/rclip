@@ -1,7 +1,8 @@
 import itertools
 import os
-from os import path
 import re
+import sys
+import threading
 from typing import Iterable, List, NamedTuple, Optional, Tuple, TypedDict, cast
 import signal
 import shlex
@@ -12,8 +13,10 @@ from tqdm import tqdm
 import PIL
 from PIL import Image, ImageFile
 
-from rclip import db, model, utils
-from rclip.snap_utils import check_snap_permissions, is_snap
+from rclip import db, fs, model
+from rclip.utils.preview import preview
+from rclip.utils.snap import check_snap_permissions, is_snap
+from rclip.utils import helpers
 
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -24,11 +27,12 @@ class ImageMeta(TypedDict):
   size: int
 
 
-def get_image_meta(filepath: str) -> ImageMeta:
-  return ImageMeta(
-    modified_at=os.path.getmtime(filepath),
-    size=os.path.getsize(filepath)
-  )
+PathMetaVector = Tuple[str, ImageMeta, model.FeatureVector]
+
+
+def get_image_meta(entry: os.DirEntry) -> ImageMeta:
+  stat = entry.stat()
+  return ImageMeta(modified_at=stat.st_mtime, size=stat.st_size)
 
 
 def is_image_meta_equal(image: db.Image, meta: ImageMeta) -> bool:
@@ -41,19 +45,25 @@ def is_image_meta_equal(image: db.Image, meta: ImageMeta) -> bool:
 class RClip:
   EXCLUDE_DIRS_DEFAULT = ['@eaDir', 'node_modules', '.git']
   IMAGE_REGEX = re.compile(r'^.+\.(jpe?g|png)$', re.I)
-  BATCH_SIZE = 8
   DB_IMAGES_BEFORE_COMMIT = 50_000
 
   class SearchResult(NamedTuple):
     filepath: str
     score: float
 
-  def __init__(self, model_instance: model.Model, database: db.DB, exclude_dirs: Optional[List[str]]):
+  def __init__(
+    self,
+    model_instance: model.Model,
+    database: db.DB,
+    indexing_batch_size: int,
+    exclude_dirs: Optional[List[str]],
+  ):
     self._model = model_instance
     self._db = database
+    self._indexing_batch_size = indexing_batch_size
 
     excluded_dirs = '|'.join(re.escape(dir) for dir in exclude_dirs or self.EXCLUDE_DIRS_DEFAULT)
-    self._exclude_dir_regex = re.compile(f'^.+\\/({excluded_dirs})(\\/.+)?$')
+    self._exclude_dir_regex = re.compile(f'^.+\\{os.path.sep}({excluded_dirs})(\\{os.path.sep}.+)?$')
 
   def _index_files(self, filepaths: List[str], metas: List[ImageMeta]):
     images: List[Image.Image] = []
@@ -67,15 +77,14 @@ class RClip:
       except PIL.UnidentifiedImageError as ex:
         pass
       except Exception as ex:
-        print(f'error loading image {path}:', ex)
+        print(f'error loading image {path}:', ex, file=sys.stderr)
 
     try:
       features = self._model.compute_image_features(images)
     except Exception as ex:
-      print('error computing features:', ex)
-      print('For image ', path)
+      print('error computing features:', ex, file=sys.stderr)
       return
-    for path, meta, vector in cast(Iterable[Tuple[str, ImageMeta, np.ndarray]], zip(filtered_paths, metas, features)):
+    for path, meta, vector in cast(Iterable[PathMetaVector], zip(filtered_paths, metas, features)):
       self._db.upsert_image(db.NewImage(
         filepath=path,
         modified_at=meta['modified_at'],
@@ -84,48 +93,62 @@ class RClip:
       ), commit=False)
 
   def ensure_index(self, directory: str):
-    # We will mark existing images as existing later
-    self._db.flag_images_in_a_dir_as_deleted(directory)
+    print(
+      'checking images in the current directory for changes;'
+      ' use "--no-indexing" to skip this if no images were added, changed, or removed',
+      file=sys.stderr,
+    )
 
-    images_processed = 0
-    batch: List[str] = []
-    metas: List[ImageMeta] = []
-    for root, _, files in os.walk(directory):
-      if self._exclude_dir_regex.match(root):
-        continue
-      filtered_files = list(f for f in files if self.IMAGE_REGEX.match(f))
-      if not filtered_files:
-        continue
-      for file in cast(Iterable[str], tqdm(filtered_files, desc=root)):
-        filepath = path.join(root, file)
+    self._db.remove_indexing_flag_from_all_images(commit=False)
+    self._db.flag_images_in_a_dir_as_indexing(directory, commit=True)
 
+    with tqdm(total=None, unit='images') as pbar:
+      def update_total_images(count: int):
+        pbar.total = count
+        pbar.refresh()
+      counter_thread = threading.Thread(
+        target=fs.count_files,
+        args=(directory, self._exclude_dir_regex, self.IMAGE_REGEX, update_total_images),
+      )
+      counter_thread.start()
+
+      images_processed = 0
+      batch: List[str] = []
+      metas: List[ImageMeta] = []
+      for entry in fs.walk(directory, self._exclude_dir_regex, self.IMAGE_REGEX):
+        filepath = entry.path
         image = self._db.get_image(filepath=filepath)
         try:
-          meta = get_image_meta(filepath)
+          meta = get_image_meta(entry)
         except Exception as ex:
-          print(f'error getting fs metadata for {filepath}:', ex)
+          print(f'error getting fs metadata for {filepath}:', ex, file=sys.stderr)
           continue
 
         if not images_processed % self.DB_IMAGES_BEFORE_COMMIT:
           self._db.commit()
         images_processed += 1
+        pbar.update()
 
         if image and is_image_meta_equal(image, meta):
-          self._db.remove_deleted_flag(filepath, commit=False)
+          self._db.remove_indexing_flag(filepath, commit=False)
           continue
 
         batch.append(filepath)
         metas.append(meta)
 
-        if len(batch) >= self.BATCH_SIZE:
+        if len(batch) >= self._indexing_batch_size:
           self._index_files(batch, metas)
           batch = []
           metas = []
 
-    if len(batch) != 0:
-      self._index_files(batch, metas)
+      if len(batch) != 0:
+        self._index_files(batch, metas)
 
-    self._db.commit()
+      self._db.commit()
+      counter_thread.join()
+
+    self._db.flag_indexing_images_in_a_dir_as_deleted(directory)
+    print('', file=sys.stderr)
 
   def search(
       self, query: str, directory: str, top_k: int = 10,
@@ -137,7 +160,7 @@ class RClip:
 
     # exclude images that were part of the query from the results
     exclude_files = [
-      os.path.abspath(query) for query in positive_queries + negative_queries if utils.is_file_path(query)
+      os.path.abspath(query) for query in positive_queries + negative_queries if helpers.is_file_path(query)
     ]
 
     filtered_similarities = filter(
@@ -151,9 +174,9 @@ class RClip:
 
     return [RClip.SearchResult(filepath=filepaths[th[1]], score=th[0]) for th in top_k_similarities]
 
-  def _get_features(self, directory: str) -> Tuple[List[str], np.ndarray]:
+  def _get_features(self, directory: str) -> Tuple[List[str], model.FeatureVector]:
     filepaths: List[str] = []
-    features: List[np.ndarray] = []
+    features: List[model.FeatureVector] = []
     for image in self._db.get_image_vectors_by_dir_path(directory):
       filepaths.append(image['filepath'])
       features.append(np.frombuffer(image['vector'], np.float32))
@@ -163,7 +186,7 @@ class RClip:
 
 
 def main():
-  arg_parser = utils.init_arg_parser()
+  arg_parser = helpers.init_arg_parser()
   args = arg_parser.parse_args()
 
   orig_modelname = args.model
@@ -180,11 +203,13 @@ def main():
   if is_snap():
     check_snap_permissions(current_directory)
 
-  datadir = utils.get_app_datadir()
-  # TODO: model name db better
+  datadir = helpers.get_app_datadir()
   dbname = 'db.sqlite3' if orig_modelname == 'clip' else f'{orig_modelname}.sqlite3'
-  database = db.DB(datadir / dbname)
-  rclip = RClip(model_instance, database, args.exclude_dir)
+  db_path = datadir / dbname
+
+  database = db.DB(db_path)
+  model_instance = model.Model(device=vars(args).get("device", "cpu"))
+  rclip = RClip(model_instance, database, args.indexing_batch_size, args.exclude_dir)
 
   if not args.no_indexing:
     rclip.ensure_index(current_directory)
@@ -197,6 +222,8 @@ def main():
     print('score\tfilepath')
     for r in result:
       print(f'{r.score:.3f}\t"{r.filepath}"')
+      if args.preview:
+        preview(r.filepath, args.preview_height)
 
 
 if __name__ == '__main__':
