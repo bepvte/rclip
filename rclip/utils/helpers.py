@@ -10,7 +10,6 @@ from importlib.metadata import version
 
 from rclip.const import IS_LINUX, IS_MACOS, IS_WINDOWS
 
-
 MAX_DOWNLOAD_SIZE_BYTES = 50_000_000
 DOWNLOAD_TIMEOUT_SECONDS = 60
 WIN_ABSOLUTE_FILE_PATH_REGEX = re.compile(r'^[a-z]:\\', re.I)
@@ -69,6 +68,7 @@ class HelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 
 def init_arg_parser() -> argparse.ArgumentParser:
+  from rclip.model import model_dict, default_model
   text_width = get_terminal_text_width()
   parser = argparse.ArgumentParser(
     formatter_class=HelpFormatter,
@@ -96,7 +96,7 @@ def init_arg_parser() -> argparse.ArgumentParser:
   )
   version_str = f'rclip {version("rclip")}'
   parser.add_argument('--version', '-v', action='version', version=version_str, help=f'prints "{version_str}"')
-  parser.add_argument('query', help='a text query or a path/URL to an image file')
+  parser.add_argument('query', help='a text query or a path/URL to an image file', nargs="*")
   parser.add_argument('--add', '-a', '+', metavar='QUERY', action='append', default=[],
                       help='a text query or a path/URL to an image file to add to the "original" query,'
                       ' can be used multiple times')
@@ -145,47 +145,62 @@ def init_arg_parser() -> argparse.ArgumentParser:
     if torch.backends.mps.is_available():
       parser.add_argument('--device', '-d', default='mps', choices=['cpu', 'mps'],
                           help='device to run on; default: mps')
+  parser.add_argument(
+    '--model',
+    action='store',
+    choices=list(model_dict),
+    default=default_model,
+    help='''which model to use
+    warning that this uses a different sqlite db as vectors are incompatible between models
+    '''
+  )
+  parser.add_argument('--sigtstp', action='store_true', default=False, help='pause after init for criu')
+  parser.add_argument('--pwd', default=False, help=argparse.SUPPRESS)
   return parser
 
 
 def remove_prefix(string: str, prefix: str) -> str:
-  '''
-  Removes prefix from a string (if present) and returns a new string without a prefix
-  TODO(yurij): replace with str.removeprefix once updated to Python 3.9+
-  '''
-  return string[len(prefix):] if string.startswith(prefix) else string
+    """
+    Removes prefix from a string (if present) and returns a new string without a prefix
+    TODO(yurij): replace with str.removeprefix once updated to Python 3.9+
+    """
+    return string[len(prefix) :] if string.startswith(prefix) else string
 
 
 # See: https://meta.wikimedia.org/wiki/User-Agent_policy
 def download_image(url: str) -> Image.Image:
-  headers = {'User-agent': 'rclip - (https://github.com/yurijmikhalevich/rclip)'}
-  check_size = requests.request('HEAD', url, headers=headers, timeout=60)
-  if length := check_size.headers.get('Content-Length'):
-      if int(length) > MAX_DOWNLOAD_SIZE_BYTES:
-          raise ValueError(f"Avoiding download of large ({length} byte) file.")
-  img = Image.open(requests.get(url, headers=headers, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS).raw)
-  return img
+    headers = {"User-agent": "rclip - (https://github.com/yurijmikhalevich/rclip)"}
+    check_size = requests.request("HEAD", url, headers=headers, timeout=60)
+    if length := check_size.headers.get("Content-Length"):
+        if int(length) > MAX_DOWNLOAD_SIZE_BYTES:
+            raise ValueError(f"Avoiding download of large ({length} byte) file.")
+    img = Image.open(
+        requests.get(
+            url, headers=headers, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS
+        ).raw
+    )
+    return img
 
 
 def read_image(query: str) -> Image.Image:
-  path = remove_prefix(query, 'file://')
-  try:
-    img = Image.open(path)
-  except UnidentifiedImageError as e:
-    # by default the filename on the UnidentifiedImageError is None
-    e.filename = path
-    raise e
-  return img
+    path = remove_prefix(query, "file://")
+    try:
+        img = Image.open(path)
+    except UnidentifiedImageError as e:
+        # by default the filename on the UnidentifiedImageError is None
+        e.filename = path
+        raise e
+    return img
 
 
 def is_http_url(path: str) -> bool:
-  return path.startswith('https://') or path.startswith('http://')
+    return path.startswith("https://") or path.startswith("http://")
 
 
 def is_file_path(path: str) -> bool:
-  return (
-    path.startswith('/') or
-    path.startswith('file://') or
-    path.startswith('./') or
-    WIN_ABSOLUTE_FILE_PATH_REGEX.match(path) is not None
-  )
+    return (
+        path.startswith("/")
+        or path.startswith("file://")
+        or path.startswith("./")
+        or WIN_ABSOLUTE_FILE_PATH_REGEX.match(path) is not None
+    )

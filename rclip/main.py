@@ -151,11 +151,11 @@ class RClip:
     print('', file=sys.stderr)
 
   def search(
-      self, query: str, directory: str, top_k: int = 10,
+      self, query: List[str], directory: str, top_k: int = 10,
       positive_queries: List[str] = [], negative_queries: List[str] = []) -> List[SearchResult]:
     filepaths, features = self._get_features(directory)
 
-    positive_queries = [query] + positive_queries
+    positive_queries = query + positive_queries
     sorted_similarities = self._model.compute_similarities_to_text(features, positive_queries, negative_queries)
 
     # exclude images that were part of the query from the results
@@ -190,7 +190,7 @@ def main():
   args = arg_parser.parse_args()
 
   orig_modelname = args.model
-  model_instance = model.model_dict[orig_modelname]()
+  model_instance = model.model_dict[orig_modelname](device=vars(args).get("device", "cpu"))
   if args.sigtstp:
     signal.raise_signal(signal.SIGSTOP)
     spl = shlex.split(stdin.readline())
@@ -205,10 +205,8 @@ def main():
 
   datadir = helpers.get_app_datadir()
   dbname = 'db.sqlite3' if orig_modelname == 'clip' else f'{orig_modelname}.sqlite3'
-  db_path = datadir / dbname
+  database = db.DB(datadir / dbname)
 
-  database = db.DB(db_path)
-  model_instance = model.Model(device=vars(args).get("device", "cpu"))
   rclip = RClip(model_instance, database, args.indexing_batch_size, args.exclude_dir)
 
   if not args.no_indexing:
