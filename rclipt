@@ -1,6 +1,9 @@
 #!/usr/bin/env zsh
 set -uo pipe_fail
 zmodload -F zsh/zutil b:zparseopts
+
+COUNT=500
+
 usage() {
 	cat <<-EOF
 	rclipt [-w] <query>
@@ -25,12 +28,12 @@ if [[ -z ${args[(I)-c]} ]]; then
 fi
 tempdir=$(mktemp rclip.XXXXX --tmpdir)
 set -x
-# rclip -t 300 $( [[ -z ${args[(I)-i]} ]] && echo - '-n' ) $@ | tail -n +2 | cut -f2- | tr -d \" | xargs -d'\n' -n1 wslpath -w >> $tempdir
-pipe0=26934 pipe1=26936 stderrid="tty[8801:32]" argv=(\"$^argv\")
-truncate --size 0 /tmp/rclipstderr
-tail -f /tmp/rclipstderr &
-echo - "-t 500 $( [[ -z ${args[(I)-i]} ]] && echo - '-n' ) --pwd ${PWD} $*" | sudo criu restore -v2 --display-stats --inherit-fd "fd[0]:pipe:[$pipe0]" --inherit-fd "fd[1]:pipe:[$pipe1]" --inherit-fd "fd[2]:$stderrid" -D /home/bep/rclip/checkpoint --action-script /home/bep/rclip/resume_script.sh | tail -n +2 | cut -f2- | tr -d \" | xargs -d'\n' -n1 wslpath -w >> $tempdir
+rclip -t $COUNT $( [[ -z ${args[(I)-i]} ]] && echo - '-n' ) $@ | tail -n +2 | cut -f2- | tr -d \" | xargs -d'\n' -n1 wslpath -w >> $tempdir
+# pipe0=171922 pipe1=171924 stderrid="tty[8800:32]" argv=(\"$^argv\")
+# truncate --size 0 /tmp/rclipstderr
+# tail -f /tmp/rclipstderr &
+# echo - "-t $COUNT $( [[ -z ${args[(I)-i]} ]] && echo - '-n' ) --pwd ${PWD} $*" | sudo criu restore -v2 --display-stats --inherit-fd "fd[0]:pipe:[$pipe0]" --inherit-fd "fd[1]:pipe:[$pipe1]" --inherit-fd "fd[2]:$stderrid" -D /home/bep/rclip/checkpoint --action-script /home/bep/rclip/resume_script.sh | tail -n +2 | cut -f2- | tr -d \" | xargs -d'\n' -n1 wslpath -w >> $tempdir
 '/mnt/c/Program Files/IrfanView/i_view64.exe' /thumbs /filelist="$(wslpath -w $tempdir)" /title="$1" &
-kill %1
+# kill %1
 rm -f /tmp/rclipstderr
 disown
