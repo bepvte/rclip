@@ -1,6 +1,6 @@
 # rclip - AI-Powered Command-Line Photo Search Tool
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-2-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 [[Blog]](https://mikhalevi.ch/rclip-an-ai-powered-command-line-photo-search-tool/) [[Demo on YouTube]](https://www.youtube.com/watch?v=tAJHXOkHidw) [[Paper]](https://www.thinkmind.org/index.php?view=article&articleid=content_2023_1_20_60011)
@@ -20,11 +20,11 @@ sudo snap install rclip
 ```
 
 <details>
-  <summary>Alternative options (self-contained executable and <code>pip</code>)</summary>
+  <summary>Alternative options (AppImage and <code>pip</code>)</summary>
 
   If your Linux distribution doesn't support [snap](https://snapcraft.io/rclip), you can use one of the alternative installation options:
 
-  #### Prebuilt x86_64 executable
+  #### AppImage (self-contained x86_64 executable)
 
   On Linux x86_64, you can install **rclip** as a self-contained executable.
 
@@ -60,8 +60,10 @@ brew install yurijmikhalevich/tap/rclip
 
 ### Windows
 
-1. Download the "-installer.exe" from the latest [release](https://github.com/yurijmikhalevich/rclip/releases).
+1. Download the "*.msi" from the latest [release](https://github.com/yurijmikhalevich/rclip/releases).
 2. Install **rclip** by running the installer.
+
+Note: if you previously installed **rclip** using the "-installer.exe" installer, you must manually uninstall the previous version.
 
 <details>
   <summary>Alternative option (<code>pip</code>)</summary>
@@ -167,21 +169,26 @@ If the poetry environment is active, you can use **rclip** locally, as described
 
 ## Contributors ✨
 
-Thanks go to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+Thanks go to these wonderful people and organizations ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
 
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
 <table>
-  <tr>
-    <td align="center"><a href="https://github.com/ramayer"><img src="https://avatars.githubusercontent.com/u/72320?v=4?s=100" width="100px;" alt=""/><br /><sub><b>ramayer</b></sub></a><br /><a href="https://github.com/yurijmikhalevich/rclip/commits?author=ramayer" title="Code">💻</a></td>
-  </tr>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ramayer"><img src="https://avatars.githubusercontent.com/u/72320?v=4?s=100" width="100px;" alt="ramayer"/><br /><sub><b>ramayer</b></sub></a><br /><a href="https://github.com/yurijmikhalevich/rclip/commits?author=ramayer" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://www.caphyon.com"><img src="https://avatars.githubusercontent.com/u/15829334?v=4?s=100" width="100px;" alt="Caphyon"/><br /><sub><b>Caphyon</b></sub></a><br /><a href="#infra-Caphyon" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+    </tr>
+  </tbody>
 </table>
 
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
 
 <!-- ALL-CONTRIBUTORS-LIST:END -->
+
+Thanks to [Caphyon](https://github.com/Caphyon) and Advanced Installer team for generously supplying **rclip** project with the Professional Advanced Installer license for creating the Windows installer.
 
 This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind are welcome!
 
