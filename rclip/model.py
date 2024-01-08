@@ -143,12 +143,17 @@ class Model:
 class OpenCLIP(Model):
   _checkpoint_name = "laion2b_s34b_b79k"
 
+class DFN(Model):
+  _model_name = "ViT-B-16"
+  _checkpoint_name = "dfn2b"
+
 class CLIP(Model):
   _checkpoint_name = "openai"
 
 model_dict = {
   'openclip': OpenCLIP,
   'clip': CLIP,
+  'dfn': DFN
 }
 
 default_model = 'openclip'
