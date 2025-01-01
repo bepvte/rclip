@@ -7,6 +7,7 @@ from typing import Iterable, List, NamedTuple, Optional, Tuple, TypedDict, cast
 import signal
 import shlex
 from sys import stdin
+from math import floor
 
 import numpy as np
 from tqdm import tqdm
@@ -32,7 +33,7 @@ PathMetaVector = Tuple[str, ImageMeta, model.FeatureVector]
 
 def get_image_meta(entry: os.DirEntry) -> ImageMeta:
   stat = entry.stat()
-  return ImageMeta(modified_at=stat.st_mtime, size=stat.st_size)
+  return ImageMeta(modified_at=floor(stat.st_mtime), size=stat.st_size)
 
 
 def is_image_meta_equal(image: db.Image, meta: ImageMeta) -> bool:

@@ -24,7 +24,7 @@ if [[ -n ${args[(I)-w]} ]]; then
   set - "$newpath" "$@"
 fi
 if [[ -z ${args[(I)-c]} ]]; then
-  cd /mnt/c/Users/bepvte/Pictures/
+  cd /mnt/c/Users/bepvt/Pictures/
 fi
 tempdir=$(mktemp rclip.XXXXX --tmpdir)
 set -x
