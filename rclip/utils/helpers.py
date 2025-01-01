@@ -4,15 +4,18 @@ import pathlib
 import textwrap
 from PIL import Image, UnidentifiedImageError
 import re
+import numpy as np
+import rawpy
 import requests
 import sys
 from importlib.metadata import version
 
-from rclip.const import IS_LINUX, IS_MACOS, IS_WINDOWS
+from rclip.const import IMAGE_RAW_EXT, IS_LINUX, IS_MACOS, IS_WINDOWS
 
 MAX_DOWNLOAD_SIZE_BYTES = 50_000_000
 DOWNLOAD_TIMEOUT_SECONDS = 60
 WIN_ABSOLUTE_FILE_PATH_REGEX = re.compile(r'^[a-z]:\\', re.I)
+DEFAULT_TERMINAL_TEXT_WIDTH = 100
 
 
 def __get_system_datadir() -> pathlib.Path:
@@ -56,9 +59,12 @@ def positive_int_arg_type(arg: str) -> int:
 
 def get_terminal_text_width() -> int:
   try:
-    return min(100, os.get_terminal_size().columns - 2)
+    computed_width = min(DEFAULT_TERMINAL_TEXT_WIDTH, os.get_terminal_size().columns - 2)
+    if computed_width < 20:
+      return DEFAULT_TERMINAL_TEXT_WIDTH
+    return computed_width
   except OSError:
-    return 100
+    return DEFAULT_TERMINAL_TEXT_WIDTH
 
 
 class HelpFormatter(argparse.RawDescriptionHelpFormatter):
@@ -140,9 +146,14 @@ def init_arg_parser() -> argparse.ArgumentParser:
     ' adding this argument overrides the default of ("@eaDir", "node_modules", ".git");'
     ' WARNING: the default will be removed in v2'
   )
+  parser.add_argument(
+    '--experimental-raw-support',
+    action='store_true',
+    default=False,
+    help='enables support for RAW images (only ARW and CR2 are supported)'
+  )
   if IS_MACOS:
-    import torch.backends.mps
-    if torch.backends.mps.is_available():
+    if is_mps_available():
       parser.add_argument('--device', '-d', default='mps', choices=['cpu', 'mps'],
                           help='device to run on; default: mps')
   parser.add_argument(
@@ -159,12 +170,20 @@ def init_arg_parser() -> argparse.ArgumentParser:
   return parser
 
 
-def remove_prefix(string: str, prefix: str) -> str:
-    """
-    Removes prefix from a string (if present) and returns a new string without a prefix
-    TODO(yurij): replace with str.removeprefix once updated to Python 3.9+
-    """
-    return string[len(prefix) :] if string.startswith(prefix) else string
+def is_mps_available() -> bool:
+  if not IS_MACOS:
+    return False
+  import torch.backends.mps
+  if not torch.backends.mps.is_available():
+    return False
+  try:
+    import torch
+    # on some systems, specifically in GHA
+    # torch.backends.mps.is_available() returns True, but using the mps backend fails
+    torch.ones(1, device='mps')
+    return True
+  except RuntimeError:
+    return False
 
 
 # See: https://meta.wikimedia.org/wiki/User-Agent_policy
@@ -182,15 +201,29 @@ def download_image(url: str) -> Image.Image:
     return img
 
 
+def get_file_extension(path: str) -> str:
+  return os.path.splitext(path)[1].lower()[1:]
+
+
+def read_raw_image_file(path: str):
+  raw = rawpy.imread(path)
+  rgb = raw.postprocess()
+  return Image.fromarray(np.array(rgb))
+
+
 def read_image(query: str) -> Image.Image:
-    path = remove_prefix(query, "file://")
-    try:
-        img = Image.open(path)
-    except UnidentifiedImageError as e:
-        # by default the filename on the UnidentifiedImageError is None
-        e.filename = path
-        raise e
-    return img
+  path = str.removeprefix(query, 'file://')
+  try:
+    file_ext = get_file_extension(path)
+    if file_ext in IMAGE_RAW_EXT:
+      image = read_raw_image_file(path)
+    else:
+      image = Image.open(path)
+  except UnidentifiedImageError as e:
+    # by default the filename on the UnidentifiedImageError is None
+    e.filename = path
+    raise e
+  return image
 
 
 def is_http_url(path: str) -> bool:

@@ -18,13 +18,14 @@ TEMPLATE = env.from_string('''class Rclip < Formula
   license "MIT"
 
   depends_on "rust" => :build # for safetensors
+  depends_on "certifi"
+  depends_on "libyaml"
   depends_on "numpy"
   depends_on "pillow"
-  depends_on "python-certifi"
-  depends_on "python@3.11"
-  depends_on "pytorch"
+  depends_on "python@3.12"
+  depends_on "pytorch-python312@2.5.1"
   depends_on "sentencepiece"
-  depends_on "torchvision"
+  depends_on "torchvision-python312@0.20.1"
 
 {{ resources }}
 
@@ -32,8 +33,8 @@ TEMPLATE = env.from_string('''class Rclip < Formula
     virtualenv_install_with_resources
 
     # link dependent virtualenvs to this one
-    site_packages = Language::Python.site_packages("python3.11")
-    paths = %w[pytorch torchvision].map do |package_name|
+    site_packages = Language::Python.site_packages("python3.12")
+    paths = %w[pytorch-python312@2.5.1 torchvision-python312@0.20.1].map do |package_name|
       package = Formula[package_name].opt_libexec
       package/site_packages
     end
@@ -88,20 +89,24 @@ def compute_checksum(url: str):
 def get_deps_for_requested_rclip_version_or_die(target_version: str):
   deps = poet.make_graph('rclip')
   rclip_metadata = deps['rclip']
+  target_tarball = f'rclip-{target_version}.tar.gz'
+
+  # it takes a few seconds for a published wheel appear in PyPI
   retries_left = 5
-  while rclip_metadata['version'] != target_version:
+  while not rclip_metadata['url'].endswith(target_tarball):
     if retries_left == 0:
       print(f'Version mismatch: {rclip_metadata["version"]} != {target_version}. Exiting.', file=sys.stderr)
       sys.exit(1)
     retries_left -= 1
     print(
-      f'Version mismatch: {rclip_metadata["version"]} != {target_version}. Retrying in 10 seconds.',
+      f'Version mismatch: {rclip_metadata["url"].split("/")[-1]} != {target_tarball}. Retrying in 10 seconds.',
       file=sys.stderr,
     )
     # it takes a few seconds for a published wheel appear in PyPI
     sleep(10)
     deps = poet.make_graph('rclip')
     rclip_metadata = deps['rclip']
+
   return deps
 
 

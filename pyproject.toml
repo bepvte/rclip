@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "rclip"
-version = "1.7.6a3"
+version = "1.11.1a26"
 description = "AI-Powered Command-Line Photo Search Tool"
 authors = ["Yurij Mikhalevich <yurij@mikhalevi.ch>"]
 license = "MIT"
@@ -18,19 +18,21 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8"
-open_clip_torch = "^2.20.0"
-# pillow = "^10.0.0"
-# requests = "~=2.26"
+python = ">=3.10 <3.13"
+numpy = "^2.1.3"
+open_clip_torch = "^2.24.0"
+pillow = "^10.3.0"
+requests = "~=2.32"
 torch = [
-  { version = "==2.1.0", source = "pypi", markers = "sys_platform != 'linux' or platform_machine == 'aarch64'" },
-  { version = "==2.1.0+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux' and platform_machine != 'aarch64'" }
+  { version = "==2.5.1", source = "pypi", markers = "sys_platform != 'linux' or platform_machine == 'aarch64'" },
+  { version = "==2.5.1+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux' and platform_machine != 'aarch64'" }
 ]
 torchvision = [
-  { version = "==0.16.0", source = "pypi", markers = "sys_platform != 'linux' or platform_machine == 'aarch64'" },
-  { version = "==0.16.0+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux' and platform_machine != 'aarch64'" }
+  { version = "==0.20.1", source = "pypi", markers = "sys_platform != 'linux' or platform_machine == 'aarch64'" },
+  { version = "==0.20.1+cpu", source = "pytorch-cpu", markers = "sys_platform == 'linux' and platform_machine != 'aarch64'" }
 ]
 tqdm = "^4.65.0"
+rawpy = "^0.24.0"
 
 [tool.poetry.group.dev.dependencies]
 pycodestyle = ">=2.7,<3.0"
@@ -47,7 +49,7 @@ build-backend = "poetry.core.masonry.api"
 
 [[tool.poetry.source]]
 name = "pypi"
-priority = "default"
+priority = "primary"
 
 [[tool.poetry.source]]
 name = "pytorch-cpu"

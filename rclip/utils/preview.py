@@ -3,6 +3,8 @@ from io import BytesIO
 import os
 from PIL import Image
 
+from rclip.utils.helpers import read_image
+
 
 def _get_start_sequence():
   term_env_var = os.getenv('TERM')
@@ -19,12 +21,12 @@ def _get_end_sequence():
 
 
 def preview(filepath: str, img_height_px: int):
-  with Image.open(filepath) as img:
+  with read_image(filepath) as img:
     if img_height_px >= img.height:
       width_px, height_px = img.width, img.height
     else:
       width_px, height_px = int(img_height_px * img.width / img.height), img_height_px
-    img = img.resize((width_px, height_px), Image.LANCZOS)
+    img = img.resize((width_px, height_px), Image.LANCZOS)  # type: ignore
     buffer = BytesIO()
     img.convert('RGB').save(buffer, format='JPEG')
   img_bytes = buffer.getvalue()

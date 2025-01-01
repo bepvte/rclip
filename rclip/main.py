@@ -15,6 +15,7 @@ import PIL
 from PIL import Image, ImageFile
 
 from rclip import db, fs, model
+from rclip.const import IMAGE_EXT, IMAGE_RAW_EXT
 from rclip.utils.preview import preview
 from rclip.utils.snap import check_snap_permissions, is_snap
 from rclip.utils import helpers
@@ -45,7 +46,6 @@ def is_image_meta_equal(image: db.Image, meta: ImageMeta) -> bool:
 
 class RClip:
   EXCLUDE_DIRS_DEFAULT = ['@eaDir', 'node_modules', '.git']
-  IMAGE_REGEX = re.compile(r'^.+\.(jpe?g|png)$', re.I)
   DB_IMAGES_BEFORE_COMMIT = 50_000
 
   class SearchResult(NamedTuple):
@@ -58,10 +58,15 @@ class RClip:
     database: db.DB,
     indexing_batch_size: int,
     exclude_dirs: Optional[List[str]],
+    enable_raw_support: bool = False,
   ):
     self._model = model_instance
     self._db = database
     self._indexing_batch_size = indexing_batch_size
+    self._enable_raw_support = enable_raw_support
+
+    supported_image_ext = IMAGE_EXT + (IMAGE_RAW_EXT if enable_raw_support else [])
+    self._image_regex = re.compile(f'^.+\\.({"|".join(supported_image_ext)})$', re.I)
 
     excluded_dirs = '|'.join(re.escape(dir) for dir in exclude_dirs or self.EXCLUDE_DIRS_DEFAULT)
     self._exclude_dir_regex = re.compile(f'^.+\\{os.path.sep}({excluded_dirs})(\\{os.path.sep}.+)?$')
@@ -71,8 +76,7 @@ class RClip:
     filtered_paths: List[str] = []
     for path in filepaths:
       try:
-        image = Image.open(path)
-        # image.convert("RGB")
+        image = helpers.read_image(path)
         images.append(image)
         filtered_paths.append(path)
       except PIL.UnidentifiedImageError as ex:
@@ -93,6 +97,18 @@ class RClip:
         vector=vector.tobytes()
       ), commit=False)
 
+  def _does_processed_image_exist_for_raw(self, raw_path: str) -> bool:
+    """Check if there is a processed image alongside the raw one; doesn't support mixed-case extensions,
+    e.g. it won't detect the .JpG image, but will detect .jpg or .JPG"""
+
+    image_path = os.path.splitext(raw_path)[0]
+    for ext in IMAGE_EXT:
+      if os.path.isfile(image_path + "." + ext):
+        return True
+      if os.path.isfile(image_path + "." + ext.upper()):
+        return True
+    return False
+
   def ensure_index(self, directory: str):
     print(
       'checking images in the current directory for changes;'
@@ -109,16 +125,23 @@ class RClip:
         pbar.refresh()
       counter_thread = threading.Thread(
         target=fs.count_files,
-        args=(directory, self._exclude_dir_regex, self.IMAGE_REGEX, update_total_images),
+        args=(directory, self._exclude_dir_regex, self._image_regex, update_total_images),
       )
       counter_thread.start()
 
       images_processed = 0
       batch: List[str] = []
       metas: List[ImageMeta] = []
-      for entry in fs.walk(directory, self._exclude_dir_regex, self.IMAGE_REGEX):
+      for entry in fs.walk(directory, self._exclude_dir_regex, self._image_regex):
         filepath = entry.path
-        image = self._db.get_image(filepath=filepath)
+
+        if self._enable_raw_support:
+          file_ext = helpers.get_file_extension(filepath)
+          if file_ext in IMAGE_RAW_EXT and self._does_processed_image_exist_for_raw(filepath):
+            images_processed += 1
+            pbar.update()
+            continue
+
         try:
           meta = get_image_meta(entry)
         except Exception as ex:
@@ -130,6 +153,7 @@ class RClip:
         images_processed += 1
         pbar.update()
 
+        image = self._db.get_image(filepath=filepath)
         if image and is_image_meta_equal(image, meta):
           self._db.remove_indexing_flag(filepath, commit=False)
           continue
@@ -186,6 +210,34 @@ class RClip:
     return filepaths, np.stack(features)
 
 
+def init_rclip(
+  working_directory: str,
+  indexing_batch_size: int,
+  device: str = "cpu",
+  dbname: str,
+  exclude_dir: Optional[List[str]] = None,
+  no_indexing: bool = False,
+  enable_raw_support: bool = False,
+):
+  datadir = helpers.get_app_datadir()
+  db_path = datadir / dbname
+
+  database = db.DB(db_path)
+  model_instance = model.Model(device=device or "cpu")
+  rclip = RClip(
+    model_instance=model_instance,
+    database=database,
+    indexing_batch_size=indexing_batch_size,
+    exclude_dirs=exclude_dir,
+    enable_raw_support=enable_raw_support,
+  )
+
+  if not no_indexing:
+    rclip.ensure_index(working_directory)
+
+  return rclip, model_instance, database
+
+
 def main():
   arg_parser = helpers.init_arg_parser()
   args = arg_parser.parse_args()
@@ -204,25 +256,33 @@ def main():
   if is_snap():
     check_snap_permissions(current_directory)
 
-  datadir = helpers.get_app_datadir()
   dbname = 'db.sqlite3' if orig_modelname == 'clip' else f'{orig_modelname}.sqlite3'
-  database = db.DB(datadir / dbname)
 
-  rclip = RClip(model_instance, database, args.indexing_batch_size, args.exclude_dir)
+  rclip, _, db = init_rclip(
+    current_directory,
+    args.indexing_batch_size,
+    vars(args).get("device", "cpu"),
+    dbname,
+    args.exclude_dir,
+    args.no_indexing,
+    args.experimental_raw_support,
+  )
 
-  if not args.no_indexing:
-    rclip.ensure_index(current_directory)
-
-  result = rclip.search(args.query, current_directory, args.top, args.add, args.subtract)
-  if args.filepath_only:
-    for r in result:
-      print(r.filepath)
-  else:
-    print('score\tfilepath')
-    for r in result:
-      print(f'{r.score:.3f}\t"{r.filepath}"')
-      if args.preview:
-        preview(r.filepath, args.preview_height)
+  try:
+    result = rclip.search(args.query, current_directory, args.top, args.add, args.subtract)
+    if args.filepath_only:
+      for r in result:
+        print(r.filepath)
+    else:
+      print('score\tfilepath')
+      for r in result:
+        print(f'{r.score:.3f}\t"{r.filepath}"')
+        if args.preview:
+          preview(r.filepath, args.preview_height)
+  except Exception as e:
+    raise e
+  finally:
+    db.close()
 
 
 if __name__ == '__main__':
