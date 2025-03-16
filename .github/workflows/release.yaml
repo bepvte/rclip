@@ -6,8 +6,11 @@ on:
       - v[0-9]+.[0-9]+.[0-9]+*
 
 jobs:
-  validate:
-    uses: ./.github/workflows/validate.yaml
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/lint
 
   parse_tag:
     runs-on: ubuntu-22.04
@@ -20,14 +23,12 @@ jobs:
           echo "is_stable_version=$([[ $GITHUB_REF_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "version=${GITHUB_REF_NAME:1}" >> $GITHUB_OUTPUT
 
-  pypi:
-    needs: validate
+  pypi-build:
+    needs: lint
     runs-on: ubuntu-22.04
-    permissions:
-      id-token: write
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install dependencies
@@ -36,21 +37,63 @@ jobs:
           pip install --upgrade poetry
           poetry install
       - run: poetry build
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: pypi
           path: dist/*
           if-no-files-found: error
+
+  pypi-test:
+    needs: pypi-build
+    strategy:
+      matrix:
+        python: ['3.10', '3.11', '3.12']
+        # macos-13 is amd64, macos-15 is arm64
+        # skipping macos-13 here because newer versions of torch aren't being built for amd64 macOS anymore
+        # builds for amd64 macOS are being tested during brew release
+        os: [ubuntu-22.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi
+          path: dist/
+      - run: pip install --extra-index-url https://download.pytorch.org/whl/cpu dist/rclip-*.whl
+        if: startsWith(matrix.os, 'ubuntu-')
+        shell: bash
+      - run: pip install dist/rclip-*.whl
+        if: ${{ !startsWith(matrix.os, 'ubuntu-') }}
+        shell: bash
+      - uses: ./.github/actions/test-system-rclip
+        with:
+          python: ${{ matrix.python }}
+          force-bash: true
+
+  pypi-release:
+    needs: pypi-test
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi
+          path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   brew:
     # the Formula references the rclip package published to PyPI
-    needs: [validate, parse_tag, pypi]
+    needs: [parse_tag, pypi-release]
     if: needs.parse_tag.outputs.is_stable_version == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install dependencies
@@ -66,44 +109,63 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.ZHIBOT_GITHUB_TOKEN }}
 
-  snap:
-    needs: [validate, parse_tag]
-    runs-on: ubuntu-20.04
+  snap-build:
+    needs: pypi-build
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: canonical/setup-lxd@main
-      - name: Configure git for "snapcraft remote-build"
-        run: |
-          git config --global user.email "yurij@mikhalevi.ch"
-          git config --global user.name "Yurij Mikhalevich"
-      - name: Setup launchpad creds
-        run: |
-          mkdir -p ~/.local/share/snapcraft/provider/launchpad
-          echo "${{ secrets.LAUNCHPAD_CREDENTIALS }}" > ~/.local/share/snapcraft/provider/launchpad/credentials
-      - uses: actions/setup-python@v4
+      - name: Download built wheel
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.10'
-      - name: Install dependencies
+          name: pypi
+          path: dist/
+      - name: Copy wheel to snapcraft local dir
         run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade poetry
-          poetry install
-      - name: Build wheel
-        run: |
-          poetry build
           mkdir snap/local
           cp -v dist/rclip-*.tar.gz snap/local
       - run: sudo snap install snapcraft --classic
-      - name: Build arm64 snap remotely
-        run: |
-          export SNAPCRAFT_REMOTE_BUILD_STRATEGY="force-fallback"
-          snapcraft remote-build --launchpad-accept-public-upload --build-for arm64
-      - name: Build amd64 snap locally
-        run: snapcraft --use-lxd --build-for amd64
-      - name: Validate built snap
-        run: |
-          sudo snap install rclip_*_amd64.snap --dangerous
-          rclip cat
+      - run: snapcraft --use-lxd --build-for ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snap-${{ matrix.arch }}
+          path: rclip_*.snap
+          if-no-files-found: error
+
+  snap-test:
+    needs: snap-build
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: snap-${{ matrix.arch }}
+      - run: sudo snap install rclip_*_${{ matrix.arch }}.snap --dangerous
+      - uses: ./.github/actions/test-system-rclip
+
+  snap-release:
+    needs: [snap-test, parse_tag]
+    runs-on: ubuntu-22.04
+    steps:
+      - run: sudo snap install snapcraft --classic
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: snap-*
+          merge-multiple: true
       - name: Upload snaps to the beta channel
         run: |
           for snap in *.snap; do
@@ -116,23 +178,13 @@ jobs:
         run: snapcraft promote --from-channel=beta --to-channel=stable --yes rclip
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_LOGIN }}
-      - name: Rename snaps for GitHub releases page
-        run: |
-          for snap in *.snap; do
-            mv "$snap" "${snap//_/-}"
-          done
-      - uses: actions/upload-artifact@v3
-        with:
-          name: snap
-          path: rclip-*.snap
-          if-no-files-found: error
 
-  appimage:
-    needs: [parse_tag, validate]
+  appimage-build:
+    needs: [lint, parse_tag]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install poetry
@@ -149,23 +201,34 @@ jobs:
         env:
           APP_VERSION: ${{ needs.parse_tag.outputs.version }}
         run: poetry run appimage-builder --skip-tests --recipe ./release-utils/appimage/appimage-builder.yml
-      - name: Validate built AppImage
-        run: ./rclip*.AppImage cat
-      - name: Rename AppImage for GitHub releases page
-        run: mv rclip-${{ needs.parse_tag.outputs.version }}-x86_64.AppImage rclip-${{ needs.parse_tag.outputs.version }}-amd64.AppImage
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: appimage
           path: rclip-*.AppImage
           if-no-files-found: error
 
-  windows:
-    needs: [parse_tag, validate]
+  appimage-test:
+    needs: appimage-build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y fuse
+      - uses: actions/download-artifact@v4
+        with:
+          name: appimage
+      - name: Install AppImage
+        run: |
+          chmod +x rclip-*.AppImage
+          sudo mv rclip-*.AppImage /usr/local/bin/rclip
+      - uses: ./.github/actions/test-system-rclip
+
+  windows-build:
+    needs: [lint, parse_tag]
     if: needs.parse_tag.outputs.is_stable_version == 'true'
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install dependencies
@@ -191,29 +254,26 @@ jobs:
           Expand-Archive -Path CodeSignTool.zip -DestinationPath .
           cd CodeSignTool-v1.2.7-windows
           & ./CodeSignTool.bat sign -input_file_path="${env:GITHUB_WORKSPACE}/build-msi/rclip-SetupFiles/rclip-${{ needs.parse_tag.outputs.version }}.msi" -username=${{ secrets.WINDOWS_SIGNING_USERNAME }} -credential_id='${{ secrets.WINDOWS_SIGNING_CREDENTIAL_ID }}' -password='${{ secrets.WINDOWS_SIGNING_PASSWORD }}' -totp_secret='${{ secrets.WINDOWS_SIGNING_TOTP_SECRET }}' -output_dir_path="${env:GITHUB_WORKSPACE}/signed"
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: signed/rclip-*.msi
           if-no-files-found: error
 
-  windows-validate:
-    needs: [parse_tag, windows]
+  windows-test:
+    needs: [parse_tag, windows-build]
     runs-on: windows-2022
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           name: windows
       - name: Install MSI
         run: Start-Process msiexec.exe -Wait -ArgumentList '/i rclip-${{ needs.parse_tag.outputs.version }}.msi /quiet'
-      - name: Ensure it works
-        run: |
-          Import-Module "$env:ChocolateyInstall/helpers/chocolateyInstaller.psm1"
-          refreshenv
-          rclip cat
+      - uses: ./.github/actions/test-system-rclip
 
   create_release:
-    needs: [parse_tag, pypi, snap, appimage, windows-validate]
+    needs: [parse_tag, pypi-release, snap-release, appimage-test, windows-test]
     # the windows job doesn't run for pre-releases, but we need to create a release for pre-releases too
     if: ${{ !cancelled() }}
     runs-on: ubuntu-22.04
@@ -222,10 +282,17 @@ jobs:
       # this is needed because of `if: ${{ !cancelled() }}` above
       - if: ${{ contains(needs.*.result, 'failure') }}
         run: exit 1
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts/
+      - name: Rename snaps for GitHub releases page
+        run: |
+          for snap in artifacts/snap-*/*.snap; do
+            mv "$snap" "${snap//_/-}"
+          done
+      - name: Rename AppImage for GitHub releases page
+        run: mv artifacts/appimage/rclip-${{ needs.parse_tag.outputs.version }}-x86_64.AppImage artifacts/appimage/rclip-${{ needs.parse_tag.outputs.version }}-amd64.AppImage
       - name: Generate Changelog
         run: |
           git fetch --unshallow
@@ -236,7 +303,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           name: ${{ github.ref_name }}
-          artifacts: artifacts/pypi/rclip-*,artifacts/snap/rclip-*.snap,artifacts/appimage/rclip-*.AppImage,artifacts/windows/rclip-*.msi
+          artifacts: artifacts/pypi/rclip-*,artifacts/snap-amd64/rclip-*.snap,artifacts/snap-arm64/rclip-*.snap,artifacts/appimage/rclip-*.AppImage,artifacts/windows/rclip-*.msi
           bodyFile: release_changelog.md
           prerelease: ${{ needs.parse_tag.outputs.is_stable_version == 'false' }}
           token: ${{ secrets.GITHUB_TOKEN }}

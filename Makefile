@@ -9,18 +9,22 @@ build-appimage:
 	poetry run appimage-builder --recipe ./release-utils/appimage/appimage-builder.yml
 
 lint-style:
-	poetry run pycodestyle .
+	poetry run ruff check
+
+fix-style:
+	poetry run ruff check --fix
+	poetry run ruff format
 
 lint-types:
 	poetry run pyright .
-
-install-pyright:
-	npm i -g pyright@1.1.185
 
 lint: lint-style lint-types
 
 test:
 	poetry run pytest tests
+
+test-system-rclip:
+	RCLIP_TEST_RUN_SYSTEM_RCLIP=true poetry run pytest tests/e2e
 
 build-docker:
 	DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build . -t rclip
