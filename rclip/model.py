@@ -214,6 +214,7 @@ class Model:
     return sorted_similarities
 
 class OpenCLIP(Model):
+  _model_name = 'ViT-B-32'
   _checkpoint_name = "laion2b_s34b_b79k"
 
 class DFN(Model):
@@ -221,6 +222,7 @@ class DFN(Model):
   _checkpoint_name = "dfn2b"
 
 class CLIP(Model):
+  _model_name = 'ViT-B-32-quickgelu'
   _checkpoint_name = "openai"
 
 model_dict = {

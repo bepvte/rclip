@@ -214,16 +214,17 @@ def init_rclip(
   working_directory: str,
   indexing_batch_size: int,
   device: str = "cpu",
-  dbname: str,
   exclude_dir: Optional[List[str]] = None,
   no_indexing: bool = False,
   enable_raw_support: bool = False,
+  model_name: str = "openclip",
 ):
   datadir = helpers.get_app_datadir()
+  dbname = 'db.sqlite3' if model_name == 'clip' else f'{model_name}.sqlite3'
   db_path = datadir / dbname
 
   database = db.DB(db_path)
-  model_instance = model.Model(device=device or "cpu")
+  model_instance = model.model_dict[model_name](device=device)
   rclip = RClip(
     model_instance=model_instance,
     database=database,
@@ -242,12 +243,6 @@ def main():
   arg_parser = helpers.init_arg_parser()
   args = arg_parser.parse_args()
 
-  orig_modelname = args.model
-  model_instance = model.model_dict[orig_modelname](device=vars(args).get("device", "cpu"))
-  if args.sigtstp:
-    signal.raise_signal(signal.SIGSTOP)
-    spl = shlex.split(stdin.readline())
-    args = arg_parser.parse_args(args=spl)
   if not args.query:
     raise ValueError("no query")
   if args.pwd:
@@ -256,17 +251,21 @@ def main():
   if is_snap():
     check_snap_permissions(current_directory)
 
-  dbname = 'db.sqlite3' if orig_modelname == 'clip' else f'{orig_modelname}.sqlite3'
 
   rclip, _, db = init_rclip(
     current_directory,
     args.indexing_batch_size,
     vars(args).get("device", "cpu"),
-    dbname,
     args.exclude_dir,
     args.no_indexing,
     args.experimental_raw_support,
+    args.model,
   )
+
+  if args.sigtstp:
+    signal.raise_signal(signal.SIGSTOP)
+    spl = shlex.split(stdin.readline())
+    args = arg_parser.parse_args(args=spl)
 
   try:
     result = rclip.search(args.query, current_directory, args.top, args.add, args.subtract)

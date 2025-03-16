@@ -152,10 +152,8 @@ def init_arg_parser() -> argparse.ArgumentParser:
     default=False,
     help='enables support for RAW images (only ARW and CR2 are supported)'
   )
-  if IS_MACOS:
-    if is_mps_available():
-      parser.add_argument('--device', '-d', default='mps', choices=['cpu', 'mps'],
-                          help='device to run on; default: mps')
+  parser.add_argument('--device', '-d', default='cpu', choices=['cpu', 'mps', 'cuda'],
+                          help='device to run on; default: cpu')
   parser.add_argument(
     '--model',
     action='store',
