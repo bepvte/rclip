@@ -1,6 +1,6 @@
 # rclip - AI-Powered Command-Line Photo Search Tool
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-3-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-6-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 [[Blog]](https://mikhalevi.ch/rclip-an-ai-powered-command-line-photo-search-tool/) [[Demo on YouTube]](https://www.youtube.com/watch?v=tAJHXOkHidw) [[Paper]](https://www.thinkmind.org/index.php?view=article&articleid=content_2023_1_20_60011)
@@ -49,6 +49,8 @@ sudo snap install rclip
 ```bash
 brew install yurijmikhalevich/tap/rclip
 ```
+
+**Note:** We only support and provide prebuilt bottles for Apple Silicon (arm64). You may try building brew rclip for Intel-based Macs yourself or try an alternative installation option below.
 
 <details>
   <summary>Alternative option (<code>pip</code>)</summary>
@@ -136,6 +138,20 @@ rclip -p kitty
   ```
 </details>
 
+### How does **rclip** update the index?
+
+When you run **rclip** in a directory that has already been processed, it will
+only index the new images added since the last run and remove the deleted images
+from its index. This makes consecutive runs much faster.
+
+If you know that no new images were added or deleted since the last run, you can
+use the `--no-indexing` (or `-n`) argument to skip the indexing step altogether
+and speed up the search even more.
+
+```bash
+rclip -n cat
+```
+
 ## Get help
 
 https://github.com/yurijmikhalevich/rclip/discussions/new/choose
@@ -176,6 +192,9 @@ Thanks go to these wonderful people and organizations ([emoji key](https://allco
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/ramayer"><img src="https://avatars.githubusercontent.com/u/72320?v=4?s=100" width="100px;" alt="ramayer"/><br /><sub><b>ramayer</b></sub></a><br /><a href="https://github.com/yurijmikhalevich/rclip/commits?author=ramayer" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://www.caphyon.com"><img src="https://avatars.githubusercontent.com/u/15829334?v=4?s=100" width="100px;" alt="Caphyon"/><br /><sub><b>Caphyon</b></sub></a><br /><a href="#infra-Caphyon" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
       <td align="center" valign="top" width="14.28%"><a href="http://abidkhan484.github.io"><img src="https://avatars.githubusercontent.com/u/15053047?v=4?s=100" width="100px;" alt="AbId KhAn"/><br /><sub><b>AbId KhAn</b></sub></a><br /><a href="https://github.com/yurijmikhalevich/rclip/commits?author=abidkhan484" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://cl4r1ty.dev"><img src="https://avatars.githubusercontent.com/u/136800640?v=4?s=100" width="100px;" alt="Ben"/><br /><sub><b>Ben</b></sub></a><br /><a href="https://github.com/yurijmikhalevich/rclip/commits?author=Cl4r1ty-1" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://techtracer.pages.dev"><img src="https://avatars.githubusercontent.com/u/48885301?v=4?s=100" width="100px;" alt="Tanmay Chaudhari"/><br /><sub><b>Tanmay Chaudhari</b></sub></a><br /><a href="https://github.com/yurijmikhalevich/rclip/commits?author=tanmayc07" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://leoauri.com"><img src="https://avatars.githubusercontent.com/u/10868855?v=4?s=100" width="100px;" alt="Leo Auri"/><br /><sub><b>Leo Auri</b></sub></a><br /><a href="https://github.com/yurijmikhalevich/rclip/commits?author=leoauri" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

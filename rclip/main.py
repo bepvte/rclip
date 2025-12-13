@@ -9,15 +9,17 @@ import numpy as np
 from tqdm import tqdm
 import PIL
 from PIL import Image, ImageFile
+from pillow_heif import register_heif_opener
 
 from rclip import db, fs, model
 from rclip.const import IMAGE_EXT, IMAGE_RAW_EXT
 from rclip.utils.preview import preview
-from rclip.utils.snap import check_snap_permissions, is_snap
+from rclip.utils.snap import check_snap_permissions, is_snap, get_snap_permission_error
 from rclip.utils import helpers
 
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+register_heif_opener()
 
 
 class ImageMeta(TypedDict):
@@ -234,9 +236,34 @@ def init_rclip(
   )
 
   if not no_indexing:
-    rclip.ensure_index(working_directory)
+    try:
+      rclip.ensure_index(working_directory)
+    except PermissionError as e:
+      if is_snap() and e.filename is not None and os.path.islink(e.filename):
+        symlink_path = e.filename
+        realpath = os.path.realpath(e.filename)
+
+        print(f"\n{get_snap_permission_error(realpath, symlink_path, is_current_directory=False)}\n")
+        sys.exit(1)
+      raise
 
   return rclip, model_instance, database
+
+
+def print_results(result: List[RClip.SearchResult], args: helpers.argparse.Namespace):
+  # if we are not outputting to console on windows, ensure unicode encoding is correct
+  if not sys.stdout.isatty() and os.name == "nt":
+    sys.stdout.reconfigure(encoding="utf-8-sig")
+
+  if args.filepath_only:
+    for r in result:
+      print(r.filepath)
+  else:
+    print("score\tfilepath")
+    for r in result:
+      print(f'{r.score:.3f}\t"{r.filepath}"')
+      if args.preview:
+        preview(r.filepath, args.preview_height)
 
 
 def main():
@@ -249,7 +276,7 @@ def main():
     os.chdir(args.pwd)
   current_directory = os.getcwd()
   if is_snap():
-    check_snap_permissions(current_directory)
+    check_snap_permissions(current_directory, is_current_directory=True)
 
 
   rclip, _, db = init_rclip(
@@ -269,15 +296,7 @@ def main():
 
   try:
     result = rclip.search(args.query, current_directory, args.top, args.add, args.subtract)
-    if args.filepath_only:
-      for r in result:
-        print(r.filepath)
-    else:
-      print("score\tfilepath")
-      for r in result:
-        print(f'{r.score:.3f}\t"{r.filepath}"')
-        if args.preview:
-          preview(r.filepath, args.preview_height)
+    print_results(result, args)
   except Exception as e:
     raise e
   finally:
